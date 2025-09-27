@@ -1,0 +1,8 @@
+{
+  "id": "b058fd",
+  "name": "Framerloc Plugin",
+  "modes": [
+    "canvas"
+  ],
+  "icon": "/icon.svg"
+}

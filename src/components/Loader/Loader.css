@@ -1,0 +1,36 @@
+.loader-container {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.loader-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    color: #4294f7;
+    font-family: 'Poppins', sans-serif;
+    font-size: 20px;
+}
+
+.loader {
+    width: 20px;
+    height: 20px;
+    margin-top: 8px;
+    margin-bottom: 8px;
+    border: 3.5px solid #ffffff;
+    border-bottom-color: transparent;
+    border-radius: 100%;
+    display: inline-block;
+    animation: rotation 1s linear infinite;
+}
+
+@keyframes rotation {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}

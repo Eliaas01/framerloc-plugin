@@ -1980,7 +1980,7 @@ function ConfigurationPopup({ isOpen, onClose }: {
     // Barre de progression simple : 2% toutes les 100ms pour atteindre 100% en 5 secondes
     setDefaultIntervalRef.current = window.setInterval(() => {
       setSetDefaultProgress(prev => {
-        const newProgress = prev + 2.24; // 2% toutes les 100ms = 20% par seconde
+        const newProgress = prev + 2.1; // 2% toutes les 100ms = 20% par seconde
         if (newProgress >= 100) {
           return 100;
         }

@@ -352,7 +352,105 @@ function NewTranslationPage({ setCurrentPage }: {
     return { pageLabel: `/${name.toLowerCase()}`, isHome: false };
   };
 
-  // FONCTION CORRIGÉE pour naviguer vers une page avec zoom optimal ET actualisation immédiate
+const handleSave = async () => {
+  try {
+    if (!selectedLanguageIso || selectedLanguageIso === defaultLanguageIso) {
+      alert('Please select a target language different from the default language');
+      return;
+    }
+
+    const pageKey = `${currentPageName.toLowerCase()}_translations`;
+    
+    const existingDataRaw = await framer.getPluginData(pageKey);
+    let existingTranslations: any = { originals: [] };
+    
+    if (existingDataRaw) {
+      try {
+        existingTranslations = JSON.parse(existingDataRaw);
+        // Assurer que originals existe
+        if (!existingTranslations.originals) {
+          existingTranslations.originals = [];
+        }
+      } catch (error) {
+        console.warn('Could not parse existing translations, creating new');
+      }
+    }
+
+    // Construire la liste des originaux (si pas déjà fait)
+    if (existingTranslations.originals.length === 0) {
+      existingTranslations.originals = textNodeTexts;
+    }
+
+    // Construire les traductions (seulement les traductions, pas les originaux)
+    const currentTranslations: string[] = [];
+    
+    textNodeTexts.forEach((text, index) => {
+      const translation = textareaValues[index];
+      if (translation && translation.trim()) {
+        currentTranslations.push(translation.trim());
+      } else {
+        // Si pas de traduction, utiliser le texte original
+        currentTranslations.push(text);
+      }
+    });
+    
+    // Sauvegarder seulement les traductions pour cette langue
+    existingTranslations[selectedLanguageIso] = currentTranslations.join(';');
+    
+    const jsonString = JSON.stringify(existingTranslations);
+    const sizeInBytes = new Blob([jsonString]).size;
+    
+    if (sizeInBytes > 2000) {
+      alert(`Data too large (${sizeInBytes} bytes). Maximum is 2KB. Please reduce translations.`);
+      return;
+    }
+    
+    await framer.setPluginData(pageKey, jsonString);
+    
+    console.log(`✅ Translations saved for ${currentPageName} in ${selectedLanguageIso}`);
+    console.log(`Data size: ${sizeInBytes} bytes (optimized structure)`);
+    
+  } catch (error) {
+    console.error('Error saving translations:', error);
+    alert('Failed to save translations. Check console for details.');
+  }
+};
+
+
+const loadSavedTranslations = async () => {
+  try {
+    const pageKey = `${currentPageName.toLowerCase()}_translations`;
+    const savedDataRaw = await framer.getPluginData(pageKey);
+    
+    if (!savedDataRaw || !selectedLanguageIso) return;
+    
+    const savedData = JSON.parse(savedDataRaw);
+    const originals = savedData.originals || [];
+    const translations = savedData[selectedLanguageIso];
+    
+    if (translations && originals.length > 0) {
+      const translationArray = translations.split(';');
+      const newTextareaValues: { [key: number]: string } = {};
+      
+      originals.forEach((originalText: string, index: number) => {
+        if (translationArray[index]) {
+          // Trouver l'index dans textNodeTexts
+          const textIndex = textNodeTexts.findIndex(text => text === originalText);
+          if (textIndex !== -1) {
+            newTextareaValues[textIndex] = translationArray[index];
+          }
+        }
+      });
+      
+      setTextareaValues(prev => ({ ...prev, ...newTextareaValues }));
+      console.log(`✅ Loaded translations for ${currentPageName} in ${selectedLanguageIso}`);
+    }
+  } catch (error) {
+    console.warn('Could not load saved translations:', error);
+  }
+};
+
+
   const handlePageClick = async (pageId: string) => {
     try {
       await framer.setSelection([pageId]);
@@ -417,7 +515,6 @@ function NewTranslationPage({ setCurrentPage }: {
             fieldType: field.type,
             text: actualText
           });
-          console.log(`  📝 Field: ${field.name} (${field.type}): "${actualText}"`);
         }
       }
     });
@@ -426,9 +523,7 @@ function NewTranslationPage({ setCurrentPage }: {
     setSelectedItemFields(itemFields);
     setExpandedItems(new Set());
     setDoubleViewExpandedItem(null);
-    
-    console.log(`✅ Item sélectionné avec ${itemFields.length} fields texte`);
-  };
+     };
 
   // Type guard pour vérifier si une valeur est string ou formattedText
   const isStringFieldValue = (value: any): value is string => {
@@ -443,26 +538,21 @@ function NewTranslationPage({ setCurrentPage }: {
   // Fonction pour récupérer toutes les collections CMS et leurs items avec les champs texte
   const fetchAllCMSCollectionsAndItems = async () => {
     try {
-      console.log("🚀 === EXTRACTION COLLECTIONS CMS ===");
       
       const collections = await framer.getCollections();
-      console.log(`📚 Collections CMS trouvées: ${collections.length}`);
       
       const collectionsWithItems = [];
       
       for (let collectionIndex = 0; collectionIndex < collections.length; collectionIndex++) {
         const collection = collections[collectionIndex];
-        console.log(`\n📖 Collection ${collectionIndex + 1}: ${collection.name}`);
         
         const fields = await collection.getFields();
         const textFields = fields.filter(field => 
           field.type === 'string' || field.type === 'formattedText'
         );
         
-        console.log(`  📝 Text fields: ${textFields.length}`);
         
         const items = await collection.getItems();
-        console.log(`  📦 Items: ${items.length}`);
         
         collectionsWithItems.push({
           id: collection.id,
@@ -472,14 +562,10 @@ function NewTranslationPage({ setCurrentPage }: {
         });
       }
       
-      console.log(`\n🎯 === RÉSULTATS CMS ===`);
-      console.log(`📚 Collections: ${collectionsWithItems.length}`);
-      console.log(`📦 Total items: ${collectionsWithItems.reduce((sum, col) => sum + col.items.length, 0)}`);
-      
+
       setCmsCollections(collectionsWithItems);
       
     } catch (error) {
-      console.error("💥 Erreur lors de l'exploration CMS:", error);
       setCmsCollections([]);
     }
   };
@@ -530,14 +616,9 @@ function NewTranslationPage({ setCurrentPage }: {
         if (activePageNode) {
           const logTextNodes = async () => {
             try {
-              console.log("🚀 === EXTRACTION DES TEXTES DE LA PAGE ACTIVE ===");
               
-              // *** ÉTAPE 1: RÉCUPÉRER TOUS LES COMPONENTNODE DU PROJET ***
-              console.log("🔍 ÉTAPE 1: Récupération de tous les ComponentNode du projet...");
               const allComponentNodes = await framer.getNodesWithType("ComponentNode");
-              console.log(`🧩 ComponentNode trouvés dans le projet: ${allComponentNodes.length}`);
               
-              // Créer un map des ComponentNode avec leurs textes
               const componentNodeMap = new Map<string, { node: any; texts: string[] }>();
               
               for (let i = 0; i < allComponentNodes.length; i++) {
@@ -571,10 +652,7 @@ function NewTranslationPage({ setCurrentPage }: {
                 }
               }
               
-              // *** ÉTAPE 2: RÉCUPÉRER LES TEXTNODES DIRECTS DE LA PAGE ***
-              console.log("\n🔍 ÉTAPE 2: Récupération des TextNodes directs de la page...");
               const pageTextNodes = await activePageNode.getNodesWithType("TextNode");
-              console.log(`TextNodes directs sur la page: ${pageTextNodes.length}`);
               
               const pageTexts = await Promise.all(
                 pageTextNodes.map(async (textNode) => {
@@ -589,9 +667,7 @@ function NewTranslationPage({ setCurrentPage }: {
               );
               
               // *** ÉTAPE 3: RÉCUPÉRER ET MATCHER LES COMPONENTINSTANCENODE ***
-              console.log("\n🔍 ÉTAPE 3: Matching ComponentInstanceNode avec ComponentNode...");
               const componentInstances = await activePageNode.getNodesWithType("ComponentInstanceNode");
-              console.log(`🎯 ComponentInstanceNode sur la page: ${componentInstances.length}`);
               
               let allMatchedTexts: string[] = [];
               let totalMatches = 0;
@@ -600,7 +676,6 @@ function NewTranslationPage({ setCurrentPage }: {
                 const componentInstance = componentInstances[i];
                 const instanceAny = componentInstance as any;
                 
-                console.log(`\n🎯 ComponentInstance ${i + 1}: ${instanceAny.name || componentInstance.id}`);
 
                 // Tenter de trouver l'ID du ComponentNode correspondant
                 let componentNodeId = null;
@@ -608,20 +683,16 @@ function NewTranslationPage({ setCurrentPage }: {
                 // Essayer différentes propriétés possibles
                 if (instanceAny.componentId) {
                   componentNodeId = instanceAny.componentId;
-                  console.log(`  🔗 ComponentId trouvé: ${componentNodeId}`);
                 } else if (instanceAny.masterComponentId) {
                   componentNodeId = instanceAny.masterComponentId;
-                  console.log(`  🔗 MasterComponentId trouvé: ${componentNodeId}`);
                 } else if (instanceAny.sourceComponentId) {
                   componentNodeId = instanceAny.sourceComponentId;
-                  console.log(`  🔗 SourceComponentId trouvé: ${componentNodeId}`);
                 } else {
                   // Essayer de deviner le componentNodeId en comparant les noms
                   for (const [nodeId, nodeData] of componentNodeMap.entries()) {
                     const nodeAny = nodeData.node as any;
                     if (nodeAny.name && instanceAny.name && nodeAny.name === instanceAny.name) {
                       componentNodeId = nodeId;
-                      console.log(`  🎯 Match par nom trouvé: ${componentNodeId}`);
                       break;
                     }
                   }
@@ -630,52 +701,26 @@ function NewTranslationPage({ setCurrentPage }: {
                 // Si on a trouvé un componentNodeId, chercher le match
                 if (componentNodeId && componentNodeMap.has(componentNodeId)) {
                   const matchedComponentNode = componentNodeMap.get(componentNodeId)!;
-                  console.log(`  ✅ MATCH TROUVÉ! ComponentNode ID: ${componentNodeId}`);
                   
                   if (matchedComponentNode.texts.length > 0) {
-                    console.log(`  📝 Textes du ComponentNode matchés avec ComponentInstance:`, matchedComponentNode.texts);
                     // AJOUTER LES TEXTES DU COMPONENTNODE COMME S'ILS VENAIENT DE LA PAGE
                     allMatchedTexts = [...allMatchedTexts, ...matchedComponentNode.texts];
                     totalMatches++;
                   } else {
-                    console.log(`  ⚠️ ComponentNode matchés mais aucun texte trouvé`);
                   }
                 } else {
-                  console.log(`  ❌ Aucun ComponentNode correspondant trouvé`);
                 }
               }
               
-              // *** ÉTAPE 4: COMBINER TOUS LES TEXTES DE LA PAGE ***
-              console.log("\n🔍 ÉTAPE 4: Combinaison de tous les textes de la page...");
-              console.log(`📄 Textes directs de la page: ${pageTexts.length}`);
-              console.log(`🧩 Textes des components matchés: ${allMatchedTexts.length}`);
               
               // COMBINER : TextNodes directs de la page + TextNodes des ComponentNode matchés
               const allTexts = [...pageTexts, ...allMatchedTexts];
               const nonEmptyTexts = allTexts.filter(text => text.trim() !== "" && text !== "Erreur lors de la lecture du texte");
               const uniqueTexts = [...new Set(nonEmptyTexts)];
               
-              // *** RÉSULTATS FINAUX ***
-              console.log(`\n🎯 === RÉSULTATS FINAUX POUR LA PAGE ${newPageName} ===`);
-              console.log(`📊 ComponentNode dans le projet: ${allComponentNodes.length}`);
-              console.log(`🎯 ComponentInstance sur cette page: ${componentInstances.length}`);
-              console.log(`✅ Matches ComponentInstance→ComponentNode: ${totalMatches}`);
-              console.log(`📄 TextNodes directs de la page: ${pageTexts.filter(t => t.trim() !== "").length}`);
-              console.log(`🧩 TextNodes des components matchés: ${allMatchedTexts.length}`);
-              console.log(`🌟 Total textes uniques sur cette page: ${uniqueTexts.length}`);
-              console.log(`📋 TOUS LES TEXTES DE CETTE PAGE:`, uniqueTexts);
-              
-              if (totalMatches > 0) {
-                console.log(`🎉 SUCCÈS! ${totalMatches} ComponentInstance matchés avec ComponentNode`);
-                console.log(`📝 Textes des components affichés sur cette page:`, allMatchedTexts);
-              } else {
-                console.log(`⚠️ Aucun ComponentInstance matchés avec ComponentNode`);
-              }
-              
               // METTRE À JOUR L'INTERFACE AVEC TOUS LES TEXTES DE CETTE PAGE
               setTextNodeTexts(uniqueTexts);
             } catch (error) {
-              console.error("💥 Erreur générale:", error);
               setTextNodeTexts([]);
             }
           };
@@ -930,6 +975,59 @@ setDefaultLanguageIso(defaultIso || "");
     return text.toLowerCase().includes(textNodesSearchText.toLowerCase());
   });
 
+useEffect(() => {
+  loadSavedTranslations();
+}, [currentPageName, selectedLanguageIso, textNodeTexts]); // <- textNodeTexts au lieu de filteredTextNodes
+
+useEffect(() => {
+  const displayTranslations = async () => {
+    try {
+      const pageKey = `${currentPageName.toLowerCase()}_translations`;
+      const savedDataRaw = await framer.getPluginData(pageKey);
+      
+      if (!savedDataRaw) {
+        console.log(`📋 [${currentPageName}] Aucune traduction sauvegardée`);
+        return;
+      }
+      
+      const savedData = JSON.parse(savedDataRaw);
+      const originals = savedData.originals || [];
+      
+      console.log('═══════════════════════════════════════════════');
+      console.log(`📄 PAGE: ${currentPageName.toUpperCase()}`);
+      console.log('═══════════════════════════════════════════════');
+      
+      Object.keys(savedData).forEach(key => {
+        if (key === 'originals') return; // Skip originals dans l'affichage
+        
+        const languageIso = key;
+        console.log(`\n🌍 LANGUE: ${languageIso.toUpperCase()}`);
+        console.log('───────────────────────────────────────────────');
+        
+        const translations = savedData[languageIso].split(';');
+        
+        originals.forEach((original: string, index: number) => {
+          const translation = translations[index] || '(non traduit)';
+          console.log(`  ${index + 1}. "${original}" → "${translation}"`);
+        });
+        
+        console.log(`\n  Total: ${translations.length} traductions`);
+      });
+      
+      console.log('\n═══════════════════════════════════════════════\n');
+      
+    } catch (error) {
+      console.error('Erreur lors de l\'affichage des traductions:', error);
+    }
+  };
+  
+  displayTranslations();
+  const interval = setInterval(displayTranslations, 5000);
+  
+  return () => clearInterval(interval);
+}, [currentPageName]);
+
+
   useLayoutEffect(() => {
     synchronizeHeights();
   }, [filteredTextNodes, synchronizeHeights]);
@@ -1051,7 +1149,15 @@ setDefaultLanguageIso(defaultIso || "");
             <div className="translation-language-container">
               <div style={{ position: 'relative', display: 'inline-block' }}>
                 <div 
-                  onClick={() => setIsSelectOpen(!isSelectOpen)}
+                  onClick={() => {
+                    // NOUVELLE LOGIQUE : Si pas de langues disponibles, ouvrir le popup
+                    const availableLanguages = languages.filter(lang => lang.iso !== defaultLanguageIso);
+                    if (availableLanguages.length === 0) {
+                      setIsConfigPopupOpen(true);
+                    } else {
+                      setIsSelectOpen(!isSelectOpen);
+                    }
+                  }}
                   style={{
                     gap: '10px',
                     backgroundColor: '#2B2B2B',
@@ -1060,14 +1166,23 @@ setDefaultLanguageIso(defaultIso || "");
                     alignItems: 'center',
                     padding: '0 10px',
                     display: 'flex',
-                    color: '#fff',
+                    color: languages.filter(lang => lang.iso !== defaultLanguageIso).length === 0 ? '#999' : '#fff',
                     borderRadius: '8px',
                     cursor: 'pointer',
                     minWidth: '150px',
                     userSelect: "none",
                   }}
                 >
-                  {languages.find(lang => lang.iso === selectedLanguageIso)?.name || "Select a language..."}
+                  {/* NOUVELLE LOGIQUE D'AFFICHAGE */}
+                  {(() => {
+                    const availableLanguages = languages.filter(lang => lang.iso !== defaultLanguageIso);
+                    if (availableLanguages.length === 0) {
+                      return "Add a language first...";
+                    }
+                    const selectedLang = languages.find(lang => lang.iso === selectedLanguageIso);
+                    return selectedLang?.name || "Select a language...";
+                  })()}
+                  
                   <svg 
                     display="block" 
                     fill="none" 
@@ -1080,14 +1195,15 @@ setDefaultLanguageIso(defaultIso || "");
                     width="1.5em"
                     style={{ 
                       float: 'right',
-                      transform: isSelectOpen ? 'rotate(90deg)' : 'rotate(-90deg)',  // Rotation selon l'état
+                      transform: isSelectOpen ? 'rotate(90deg)' : 'rotate(-90deg)',
                     }}
                   >
                     <polyline points="6,4 10,8 6,12"></polyline>
                   </svg>
                 </div>
 
-                {isSelectOpen && (
+                {/* MODIFIER AUSSI LA DROPDOWN POUR NE S'AFFICHER QUE S'IL Y A DES LANGUES */}
+                {isSelectOpen && languages.filter(lang => lang.iso !== defaultLanguageIso).length > 0 && (
                   <div style={{
                     position: 'absolute',
                     top: '100%',
@@ -1096,8 +1212,8 @@ setDefaultLanguageIso(defaultIso || "");
                     backgroundColor: '#2B2B2B',
                     borderTop: 'none',
                     borderRadius: '8px 8px 8px 8px',
-                    maxHeight: '150px',        // LIMITE LA HAUTEUR DE LA DROPDOWN
-                    overflowY: 'auto',         // ACTIVE LE SCROLL
+                    maxHeight: '150px',
+                    overflowY: 'auto',
                     zIndex: 1000
                   }}>
                     {languages
@@ -1131,7 +1247,6 @@ setDefaultLanguageIso(defaultIso || "");
               </div>
             </div>
         </div>
-
         <div className="translation-navbar-container">
           <div className="translation-licence-container">
             <svg
@@ -1719,7 +1834,58 @@ setDefaultLanguageIso(defaultIso || "");
               )
             )}
           </div>
-          <div className="translation-translate-export-container"></div>
+          <div className="translation-translate-export-container" style={{
+            display: 'flex',
+            flexDirection: 'row',
+            gap: '15px',
+            paddingRight: '15px'
+          }}>
+            <button 
+              className="translation-save-button"
+              style={{
+                flex: '1',
+                height: '35px',
+                backgroundColor: '#0099FF',
+                color: '#FFF',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: '500',
+                fontSize: '12px'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#0088EE';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#0099FF';
+              }}
+              onClick={handleSave}
+            >
+              Save
+            </button>
+            <button 
+              className="translation-export-button"
+              style={{
+                flex: '1',
+                height: '35px',
+                backgroundColor: '#0099FF',
+                color: '#FFF',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: '500',
+                fontSize: '12px'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#0088EE';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#0099FF';
+              }}
+            >
+              Export
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1954,9 +2120,7 @@ function ConfigurationPopup({ isOpen, onClose }: {
       setSelectedLanguageToAdd("");
       setSearchAddLanguage("");
       
-      console.log("Langue ajoutée avec succès:", languageEntry);
     } catch (error) {
-      console.error("Erreur lors de l'ajout de la langue:", error);
       alert("Error adding language. Please try again.");
     }
   };
@@ -1999,9 +2163,7 @@ function ConfigurationPopup({ isOpen, onClose }: {
         setSelectedDefaultLanguage("");
         setSearchDefaultLanguage("");
         
-        console.log("Langue par défaut définie avec succès:", selectedDefaultLanguage);
       } catch (error) {
-        console.error("Erreur lors de la définition de la langue par défaut:", error);
         alert("Error setting default language. Please try again.");
       } finally {
         clearSetDefaultTimers();
@@ -2034,9 +2196,7 @@ function ConfigurationPopup({ isOpen, onClose }: {
         setAddedLanguages(updatedLanguages);
         setLanguageToDelete(null);
         
-        console.log("Langue supprimée avec succès:", language);
       } catch (error) {
-        console.error("Erreur lors de la suppression de la langue:", error);
         alert("Error removing language. Please try again.");
       }
     } else {
